@@ -7,13 +7,24 @@
 //
 
 import UIKit
+import CoreData
 
 class TodoListViewController: UITableViewController {
 
     var itemArray = [Item]()
-        //now a global constant
-    let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
     
+    var selectedCategory: Category? {
+        didSet{
+        loadItems()
+        }
+    }
+    
+        //now a global constant
+    //let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
+        //don't need dataFilePath anymore
+    
+    let context = (UIApplication.shared.delegate as! AppDelegate).persistentContainer.viewContext
+
     //let defaults = UserDefaults.standard
     
     override func viewDidLoad() {
@@ -21,7 +32,12 @@ class TodoListViewController: UITableViewController {
         
 //        let dataFilePath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("Items.plist")
         
-        print(dataFilePath)
+        print(FileManager.default.urls(for: .documentDirectory, in: .userDomainMask))
+        
+       // loadItems()
+        
+    }
+
         
 //        let newItem = Item()
 //        newItem.title = "1989"
@@ -35,12 +51,11 @@ class TodoListViewController: UITableViewController {
 //        newItem3.title = "Lover"
 //        itemArray.append(newItem3)
         
-        loadItems()
+      //  loadItems()
         
 //        if let items = defaults.array(forKey: "TodoListArray") as? [Item] {
 //            itemArray = items
 //        }
-    }
 
     
     //MARK - Tableview Datasource methods
@@ -76,6 +91,10 @@ class TodoListViewController: UITableViewController {
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         //print(itemArray[indexPath.row])
 
+        //context.delete(itemArray[indexPath.row])
+        //itemArray.remove(at: indexPath.row)
+       //ordering matters
+        
         itemArray[indexPath.row].done = !itemArray[indexPath.row].done
         
 //        if itemArray[indexPath.row].done == false {
@@ -109,8 +128,11 @@ class TodoListViewController: UITableViewController {
             //what will happen once user clicks Add Item button on our UIAlert
             //print("Success mofo!")
             
-            let newItem = Item()
+            
+            let newItem = Item(context: self.context)
             newItem.title = textField.text!
+            newItem.done = false
+            newItem.parentCategory = self.selectedCategory
             
             self.itemArray.append(newItem)
             
@@ -143,27 +165,83 @@ class TodoListViewController: UITableViewController {
     //MARK: - Model Manipulation Methods
     func saveItems() {
         //no longer inside a closure...
-        let encoder = PropertyListEncoder()
+        //let encoder = PropertyListEncoder()  no longer using encoder
+        
         do {
-            let data = try encoder.encode(itemArray)
-            try data.write(to: dataFilePath!)
+            //let data = try encoder.encode(itemArray)
+            //try data.write(to: dataFilePath!)
+            try context.save()
         } catch {
-            print("error encoding item array, \(error)")
+            //print("error encoding item array, \(error)")
+            print("error saving context \(error)")
         }
         
         self.tableView.reloadData()
     }
     
-    func loadItems() {
-        if let data = try? Data(contentsOf: dataFilePath!) {
-            let decoder = PropertyListDecoder()
-            do {
-            itemArray = try decoder.decode([Item].self, from: data)
-            } catch {
-                print("Error decoding item \(error)")
-            }
+//    func loadItems() {
+//        if let data = try? Data(contentsOf: dataFilePath!) {
+//            let decoder = PropertyListDecoder()
+//            do {
+//            itemArray = try decoder.decode([Item].self, from: data)
+//            } catch {
+//                print("Error decoding item \(error)")
+//            }
+//        }
+//    }
+    func loadItems(with request: NSFetchRequest<Item> = Item.fetchRequest(), predicate: NSPredicate? = nil) {
+        
+        //let request: NSFetchRequest<Item> = Item.fetchRequest()
+        
+        let categoryPredicate = NSPredicate(format: "parentCategory.name MATCHES %@", selectedCategory!.name!)
+        
+        if let additionalPredicate = predicate {
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categoryPredicate, additionalPredicate])
+        } else {
+            request.predicate = categoryPredicate
+        }
+//        let compoundPredicate = NSCompoundPredicate(andPredicateWithSubpredicates: [categoryPredicate, predicate!])
+//
+//        request.predicate = compoundPredicate
+        
+        do {
+            itemArray = try context.fetch(request)
+        } catch {
+            print("error fetching data from context \(error)")
         }
     }
     
+}
+
+//MARK: - Search bar methods
+
+extension TodoListViewController: UISearchBarDelegate {
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        
+        let request: NSFetchRequest<Item> = Item.fetchRequest()
+        
+        let predicate = NSPredicate(format: "title CONTAINS %@", searchBar.text!)
+        
+        request.sortDescriptors = [NSSortDescriptor(key: "title", ascending: true)]
+        
+        loadItems(with: request, predicate: predicate)
+//        do {
+//            itemArray = try context.fetch(request)
+//        } catch {
+//            print("error fetching data from context \(error)")
+//        }
+        
+        //tableView.reloadData()
+    }
+    
+    func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+        if searchBar.text?.count == 0 {
+            loadItems()
+            
+            DispatchQueue.main.async {
+                searchBar.resignFirstResponder()
+            }
+        }
+    }
 }
 
